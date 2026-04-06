@@ -685,18 +685,56 @@ async function checkPaymentStatus(
 // CRON JOBS
 // ============================================
 
+// Limpiar reservas expiradas cada minuto
 cron.schedule('* * * * *', async () => {
   try {
     const lottery = await lotteryService.getActiveLottery();
     if (lottery) {
       await query(
-        `UPDATE tickets SET status = 'available', reserved_until = NULL 
+        `UPDATE tickets SET status = 'available', reserved_until = NULL
          WHERE lottery_id = $1 AND status = 'reserved' AND reserved_until < NOW()`,
         [lottery.id]
       );
     }
   } catch (error) {
     logger.error('Error cleaning reservations', { error });
+  }
+});
+
+// Verificar pagos pendientes cada 30 segundos (recuperación tras reinicios)
+cron.schedule('*/30 * * * * *', async () => {
+  try {
+    const pending = await purchaseService.getPendingPurchases();
+    if (pending.length === 0) return;
+
+    for (const purchase of pending) {
+      try {
+        const isPaid = await lightningService.checkInvoiceStatus(purchase.paymentHash);
+        if (!isPaid) continue;
+
+        await purchaseService.markAsPaid(purchase.paymentHash);
+        await ticketService.markTicketAsSold(purchase.lotteryId, purchase.ticketNumber);
+
+        const lottery = await lotteryService.getLotteryById(purchase.lotteryId);
+        if (!lottery) continue;
+
+        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO');
+
+        await bot.telegram.sendMessage(
+          purchase.telegramUserId,
+          `✅ *¡Pago confirmado!*\n\n` +
+          `Tu número: *${formatNumber(purchase.ticketNumber)}*\n\n` +
+          `Sorteo: ${drawDate} a las ${lottery.drawTime}`,
+          { parse_mode: 'Markdown' }
+        );
+
+        logger.info('Payment recovered by cron', { paymentHash: purchase.paymentHash, ticketNumber: purchase.ticketNumber });
+      } catch (err) {
+        logger.error('Error checking pending purchase', { err, purchaseId: purchase.id });
+      }
+    }
+  } catch (error) {
+    logger.error('Error in pending payments cron', { error });
   }
 });
 
