@@ -54,7 +54,7 @@ export class LightningService {
         }
       );
 
-      return response.data.paid === true;
+      return response.data.paid === true || response.data.status === 'success';
     } catch (error) {
       logger.error('Error checking invoice status', { error, paymentHash });
       return false;
