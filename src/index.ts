@@ -12,7 +12,7 @@ import { StatisticsService } from './services/statisticsService';
 import { LightningService } from './services/lightningService';
 import { createTicketsKeyboard, adminMainKeyboard } from './bot/keyboards/ticketsKeyboard';
 import { generateQRCode } from './utils/qrGenerator';
-import { validateLightningAddress, formatNumber, formatSats } from './utils/validators';
+import { formatNumber, formatSats } from './utils/validators';
 import { Lottery } from './types';
 import { query } from './database/connection';
 import cron from 'node-cron';
@@ -303,7 +303,7 @@ bot.action(/^select_(\d+)$/, async (ctx) => {
 
   await ctx.reply(
     `Has seleccionado el número *${formatNumber(ticketNumber)}*\n\n` +
-    `Ingresa tu dirección Lightning Network:\n` +
+    `En caso de que seas el ganador necesitamos contactarte. Ingresa una de las siguientes opciones: tu Lightning Address, correo electrónico, usuario Telegram.\n\n` +
     `Ejemplo: satoshi@colsats.com`,
     { parse_mode: 'Markdown' }
   );
@@ -441,16 +441,16 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Flujo de dirección Lightning
+  // Flujo de contacto del ganador
   if (ctx.session?.awaitingLightningAddress) {
     const lightningAddress = text.trim();
 
-    if (!validateLightningAddress(lightningAddress)) {
-      return ctx.reply(
-        '❌ Dirección Lightning inválida.\n\n' +
-        'Formato: usuario@dominio.com\n' +
-        'Ejemplo: satoshi@colsats.com'
-      );
+    if (lightningAddress.length === 0) {
+      return ctx.reply('❌ El campo no puede estar vacío.');
+    }
+
+    if (lightningAddress.length > 50) {
+      return ctx.reply(`❌ El texto es demasiado largo (${lightningAddress.length} caracteres). Máximo 50 caracteres.`);
     }
 
     const ticketNumber = ctx.session.selectedTicket!;
