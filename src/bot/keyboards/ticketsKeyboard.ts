@@ -48,12 +48,13 @@ export const adminMainKeyboard: InlineKeyboardMarkup = {
   inline_keyboard: [
     [{ text: '➕ Crear Lotería', callback_data: 'admin_create' }],
     [{ text: '📊 Ver Estadísticas', callback_data: 'admin_stats' }],
+    [{ text: '🚫 Congelar Venta', callback_data: 'admin_freeze' }],
     [
       { text: '🎲 Selección Aleatoria', callback_data: 'admin_winner_random' },
     ],
     [
       { text: '✍️ Selección Manual', callback_data: 'admin_winner_manual' },
     ],
-    [{ text: '🔒 Cerrar Lotería', callback_data: 'admin_close' }],
+    [{ text: '❌ Cerrar Lotería', callback_data: 'admin_close' }],
   ],
 };

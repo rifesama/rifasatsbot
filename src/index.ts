@@ -263,9 +263,30 @@ bot.action('admin_winner_manual', isAdmin, async (ctx) => {
   );
 });
 
+bot.action('admin_freeze', isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const lottery = await lotteryService.getActiveLottery();
+  if (!lottery) {
+    return ctx.reply('❌ No hay ninguna lotería activa.');
+  }
+
+  if (lottery.status === 'frozen') {
+    return ctx.reply('⚠️ La venta ya está congelada en esta lotería.');
+  }
+
+  await lotteryService.freezeLottery(lottery.id);
+  await ctx.reply(
+    `🚫 *Venta congelada — ${lottery.name}*\n\n` +
+    `Los usuarios ya no pueden comprar números.\n` +
+    `Puedes seleccionar el ganador cuando quieras.`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 bot.action('admin_close', isAdmin, async (ctx) => {
   await ctx.answerCbQuery();
-  
+
   const lottery = await lotteryService.getActiveLottery();
   if (!lottery) {
     return ctx.reply('❌ No hay ninguna lotería activa.');
@@ -281,12 +302,16 @@ bot.action('admin_close', isAdmin, async (ctx) => {
 
 bot.action(/^select_(\d+)$/, async (ctx) => {
   await ctx.answerCbQuery();
-  
+
   const ticketNumber = parseInt(ctx.match[1]);
   const lottery = await lotteryService.getActiveLottery();
 
   if (!lottery) {
     return ctx.reply('❌ No hay ninguna lotería activa.');
+  }
+
+  if (lottery.status === 'frozen') {
+    return ctx.reply('🚫 La venta de números está cerrada. La lotería juega pronto.');
   }
 
   const reserved = await ticketService.reserveTicket(lottery.id, ticketNumber);

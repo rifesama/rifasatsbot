@@ -9,7 +9,7 @@ export interface Lottery {
   ticketPrice: number;
   drawDate: Date;
   drawTime: string;
-  status: 'active' | 'closed' | 'completed';
+  status: 'active' | 'frozen' | 'closed' | 'completed';
   createdAt: Date;
   createdBy?: number;
   winningNumber?: number;

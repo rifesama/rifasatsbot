@@ -10,13 +10,26 @@ export class LotteryService {
   async getActiveLottery(): Promise<Lottery | null> {
     try {
       const result = await query(
-        "SELECT * FROM lotteries WHERE status = 'active' ORDER BY created_at DESC LIMIT 1"
+        "SELECT * FROM lotteries WHERE status IN ('active', 'frozen') ORDER BY created_at DESC LIMIT 1"
       );
-      
+
       if (result.rows.length === 0) return null;
       return DBMapper.lotteryFromDB(result.rows[0] as LotteryDB);
     } catch (error) {
       logger.error('Error getting active lottery', { error });
+      throw error;
+    }
+  }
+
+  async freezeLottery(lotteryId: number): Promise<void> {
+    try {
+      await query(
+        "UPDATE lotteries SET status = 'frozen' WHERE id = $1 AND status = 'active'",
+        [lotteryId]
+      );
+      logger.info('Lottery frozen', { lotteryId });
+    } catch (error) {
+      logger.error('Error freezing lottery', { error, lotteryId });
       throw error;
     }
   }

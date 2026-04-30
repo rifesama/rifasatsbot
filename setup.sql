@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS lotteries (
   ticket_price INTEGER NOT NULL CHECK (ticket_price > 0),
   draw_date DATE NOT NULL,
   draw_time TIME NOT NULL,
-  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'closed', 'completed')),
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'frozen', 'closed', 'completed')),
   created_at TIMESTAMP DEFAULT NOW(),
   created_by BIGINT REFERENCES admins(telegram_id),
   winning_number INTEGER CHECK (winning_number >= 0 AND winning_number <= 99),
