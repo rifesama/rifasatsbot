@@ -314,6 +314,7 @@ export class LotteryService {
 
   async deleteLottery(lotteryId: number): Promise<void> {
     try {
+      await query('DELETE FROM lottery_history WHERE lottery_id = $1', [lotteryId]);
       await query('DELETE FROM purchases WHERE lottery_id = $1', [lotteryId]);
       await query('DELETE FROM tickets WHERE lottery_id = $1', [lotteryId]);
       await query('DELETE FROM lotteries WHERE id = $1', [lotteryId]);
