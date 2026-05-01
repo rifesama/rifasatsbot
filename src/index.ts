@@ -491,7 +491,7 @@ bot.on('text', async (ctx) => {
           data.name!,
           data.description,
           data.price!,
-          new Date(data.date!),
+          data.date!,
           data.time!,
           percentage,  // ← NUEVO PARÁMETRO
           ctx.from.id

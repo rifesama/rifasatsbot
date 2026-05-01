@@ -38,7 +38,7 @@ export class LotteryService {
     name: string,
     description: string | undefined,
     ticketPrice: number,
-    drawDate: Date,
+    drawDate: string,
     drawTime: string,
     adminFeePercentage: number,  // ← NUEVO PARÁMETRO
     createdBy: number
@@ -65,7 +65,7 @@ export class LotteryService {
         name,
         description,
         ticketPrice, 
-        drawDate: drawDate.toISOString(), 
+        drawDate,
         drawTime,
         adminFeePercentage,  // ← Log del porcentaje
         createdBy,
