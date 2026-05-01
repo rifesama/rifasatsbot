@@ -88,7 +88,7 @@ bot.command('lottery', async (ctx) => {
   }
 
   const stats = await statsService.getLotteryStats(lottery.id);
-  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO');
+  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
 
   let message = `🎰 *${lottery.name}*\n\n`;
   
@@ -168,7 +168,7 @@ bot.action('admin_stats', isAdmin, async (ctx) => {
 
   const stats = await statsService.getLotteryStats(lottery.id);
   const purchases = await purchaseService.getPurchasesByLottery(lottery.id);
-  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO');
+  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
   const adminFeePercentage = lottery.adminFeePercentage || 10;
 
   let message = `📊 *Estadísticas - ${lottery.name}*\n\n`;
@@ -284,6 +284,61 @@ bot.action('admin_freeze', isAdmin, async (ctx) => {
   );
 });
 
+bot.action('admin_delete', isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const lottery = await lotteryService.getActiveLottery();
+  if (!lottery) {
+    return ctx.reply('❌ No hay ninguna lotería activa para eliminar.');
+  }
+
+  const stats = await statsService.getLotteryStats(lottery.id);
+  if (stats.soldTickets > 0) {
+    return ctx.reply(
+      `⚠️ No se puede eliminar "${lottery.name}".\n\n` +
+      `Ya hay *${stats.soldTickets}* número(s) vendido(s) con pagos confirmados.\n` +
+      `Usa "Cerrar Lotería" en su lugar.`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  await ctx.reply(
+    `⚠️ *¿Confirmas que quieres eliminar esta lotería?*\n\n` +
+    `🎟️ *${lottery.name}*\n` +
+    `📅 Sorteo: ${new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' })} a las ${lottery.drawTime}\n\n` +
+    `Esta acción no se puede deshacer.`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Sí, eliminar', callback_data: `confirm_delete_${lottery.id}` },
+            { text: '❌ Cancelar', callback_data: 'cancel_delete' },
+          ],
+        ],
+      },
+    }
+  );
+});
+
+bot.action(/^confirm_delete_(\d+)$/, isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const lotteryId = parseInt(ctx.match[1]);
+  const lottery = await lotteryService.getLotteryById(lotteryId);
+  if (!lottery) {
+    return ctx.editMessageText('❌ Lotería no encontrada.');
+  }
+
+  await lotteryService.deleteLottery(lotteryId);
+  await ctx.editMessageText(`🗑️ Lotería "${lottery.name}" eliminada correctamente.`);
+});
+
+bot.action('cancel_delete', isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.editMessageText('✅ Eliminación cancelada.');
+});
+
 bot.action('admin_close', isAdmin, async (ctx) => {
   await ctx.answerCbQuery();
 
@@ -327,8 +382,11 @@ bot.action(/^select_(\d+)$/, async (ctx) => {
   };
 
   await ctx.reply(
-    `Has seleccionado el número *${formatNumber(ticketNumber)}*\n\n` +
-    `En caso de que seas el ganador necesitamos contactarte. Ingresa una de las siguientes opciones: tu Lightning Address, correo electrónico, usuario Telegram.\n\n` +
+    `*Has seleccionado el número ${formatNumber(ticketNumber)}*\n\n` +
+    `En caso de que seas el ganador necesitamos contactarte, ingresa UNA de las siguientes opciones:\n` +
+    `⚡️ Lightning Address\n` +
+    `📨 Correo electrónico\n` +
+    `👤 Usuario Telegram\n\n` +
     `Ejemplo: satoshi@colsats.com`,
     { parse_mode: 'Markdown' }
   );
@@ -449,7 +507,7 @@ bot.on('text', async (ctx) => {
         }
         
         successMessage += `💰 Precio: ${formatSats(lottery.ticketPrice)} sats\n` +
-          `📅 Sorteo: ${new Date(lottery.drawDate).toLocaleDateString('es-CO')} a las ${lottery.drawTime}\n` +
+          `📅 Sorteo: ${new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' })} a las ${lottery.drawTime}\n` +
           `💼 Comisión admin: ${percentage}%\n`;
         
         if (lottery.accumulatedFunds && lottery.accumulatedFunds > 0) {
@@ -683,7 +741,7 @@ async function checkPaymentStatus(
         await purchaseService.markAsPaid(paymentHash);
         await ticketService.markTicketAsSold(lotteryId, ticketNumber);
 
-        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO');
+        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
         
         await bot.telegram.sendMessage(
           userId,
@@ -743,7 +801,7 @@ cron.schedule('*/30 * * * * *', async () => {
         const lottery = await lotteryService.getLotteryById(purchase.lotteryId);
         if (!lottery) continue;
 
-        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO');
+        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
 
         await bot.telegram.sendMessage(
           purchase.telegramUserId,

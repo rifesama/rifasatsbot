@@ -312,6 +312,18 @@ export class LotteryService {
     }
   }
 
+  async deleteLottery(lotteryId: number): Promise<void> {
+    try {
+      await query('DELETE FROM purchases WHERE lottery_id = $1', [lotteryId]);
+      await query('DELETE FROM tickets WHERE lottery_id = $1', [lotteryId]);
+      await query('DELETE FROM lotteries WHERE id = $1', [lotteryId]);
+      logger.info('Lottery deleted', { lotteryId });
+    } catch (error) {
+      logger.error('Error deleting lottery', { error, lotteryId });
+      throw error;
+    }
+  }
+
   async getLotteryById(lotteryId: number): Promise<Lottery | null> {
     try {
       const result = await query(
