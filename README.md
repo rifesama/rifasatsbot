@@ -12,6 +12,8 @@ Bot de rifas/loterías P2P con pagos en Bitcoin vía Lightning Network, operado 
 - **Verificación de pago** automática en tiempo real
 - **Ganador aleatorio o manual** (basado en lotería externa)
 - **Notificación automática** al ganador vía Telegram
+- **Congelar venta** — cierra la venta de tickets antes del sorteo sin cerrar la rifa
+- **Eliminar rifa** — elimina una rifa sin tickets vendidos (con confirmación)
 
 ## Comandos
 
@@ -30,15 +32,26 @@ Bot de rifas/loterías P2P con pagos en Bitcoin vía Lightning Network, operado 
 **Desde el panel de admin:**
 - **Crear rifa** — nombre, descripción, precio, fecha, hora y comisión
 - **Ver estadísticas** — números vendidos, recaudado, distribución de fondos
+- **Congelar venta** — impide nuevas compras sin cerrar la rifa (útil 1h antes del sorteo)
 - **Seleccionar ganador aleatorio** — el bot elige entre los números vendidos
 - **Seleccionar ganador manual** — el admin ingresa el número ganador (ej. últimas cifras de lotería externa)
-- **Cerrar rifa**
+- **Cerrar rifa** — cierra la rifa sin seleccionar ganador
+- **Eliminar rifa** — elimina permanentemente una rifa que no tenga pagos confirmados
+
+## Estados de una rifa
+
+| Estado | Descripción |
+|--------|-------------|
+| `active` | Rifa activa, se pueden comprar tickets |
+| `frozen` | Venta congelada, no se pueden comprar más tickets |
+| `closed` | Rifa cerrada sin ganador |
+| `completed` | Sorteo realizado, ganador seleccionado |
 
 ## Flujo de compra
 
 1. Usuario ejecuta `/lottery`
 2. Selecciona un número disponible (🟩)
-3. Ingresa su Lightning Address (ej. `usuario@colsats.com`)
+3. Ingresa una forma de contacto: Lightning Address, correo electrónico o usuario de Telegram
 4. Recibe factura Lightning + QR
 5. Paga desde su wallet Lightning
 6. Bot confirma el pago y reserva el número
@@ -105,6 +118,16 @@ GRANT ALL PRIVILEGES ON DATABASE lottery_bot TO lottery_user;
 
 ```bash
 psql -U lottery_user -d lottery_bot -f setup.sql
+```
+
+#### Migración en base de datos existente
+
+Si ya tenías la base de datos creada, ejecuta este comando para agregar el estado `frozen`:
+
+```sql
+ALTER TABLE lotteries DROP CONSTRAINT IF EXISTS lotteries_status_check;
+ALTER TABLE lotteries ADD CONSTRAINT lotteries_status_check
+  CHECK (status IN ('active', 'frozen', 'closed', 'completed'));
 ```
 
 ### 5. Compilar y ejecutar

@@ -13,6 +13,9 @@ import { LightningService } from './services/lightningService';
 import { createTicketsKeyboard, adminMainKeyboard } from './bot/keyboards/ticketsKeyboard';
 import { generateQRCode } from './utils/qrGenerator';
 import { formatNumber, formatSats } from './utils/validators';
+
+const escapeMd = (text: string): string =>
+  String(text || '').replace(/[_*`[]/g, '\\$&');
 import { Lottery } from './types';
 import { query } from './database/connection';
 import cron from 'node-cron';
@@ -208,8 +211,8 @@ bot.action('admin_stats', isAdmin, async (ctx) => {
     
     for (const p of purchases) {
       detailMessage += `Número: ${formatNumber(p.ticketNumber)}\n`;
-      detailMessage += `Usuario: @${p.telegramUsername} (ID: ${p.telegramUserId})\n`;
-      detailMessage += `Dirección LN: ${p.lightningAddress}\n`;
+      detailMessage += `Usuario: @${escapeMd(p.telegramUsername)} (ID: ${p.telegramUserId})\n`;
+      detailMessage += `Dirección LN: ${escapeMd(p.lightningAddress)}\n`;
       detailMessage += `Fecha: ${new Date(p.purchasedAt).toLocaleString('es-CO')}\n`;
       detailMessage += `Monto: ${formatSats(p.amountSats)} sats\n\n`;
     }
@@ -606,8 +609,8 @@ async function processWinnerResult(ctx: MyContext, lottery: Lottery, result: any
     // HAY GANADOR
     let message = `🏆 *¡GANADOR SELECCIONADO!*\n\n`;
     message += `🎯 Número ganador: *${formatNumber(result.winningNumber)}*\n\n`;
-    message += `👤 Ganador: @${result.winner.telegramUsername}\n`;
-    message += `⚡ Dirección LN: ${result.winner.lightningAddress}\n\n`;
+    message += `👤 Ganador: @${escapeMd(result.winner.telegramUsername)}\n`;
+    message += `⚡ Dirección LN: ${escapeMd(result.winner.lightningAddress)}\n\n`;
     message += `💰 *Distribución:*\n`;
     message += `   Total recaudado: ${formatSats(result.totalAmount)} sats\n`;
     message += `   🏆 Para ganador: ${formatSats(result.winnerPrize!)} sats (${100 - result.adminFeePercentage}%)\n`;
