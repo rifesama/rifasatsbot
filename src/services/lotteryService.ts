@@ -51,15 +51,20 @@ export class LotteryService {
         throw new Error('El porcentaje debe estar entre 0 y 100');
       }
 
-      // Obtener fondos acumulados
+      // Bote acumulado: solo de la ÚLTIMA lotería sorteada y solo si no tuvo
+      // ganador. Antes se buscaba la última sin ganador, aunque una posterior
+      // ya hubiera heredado y pagado ese bote (se pagaba dos veces).
+      // Las cerradas sin sorteo se saltan: no pagaron el bote que traían.
       const lastLotteryResult = await client.query(
-        `SELECT accumulated_funds FROM lotteries 
+        `SELECT accumulated_funds, winner_telegram_id FROM lotteries 
          WHERE status = 'completed' AND winning_number IS NOT NULL 
-         AND winner_telegram_id IS NULL
          ORDER BY created_at DESC LIMIT 1`
       );
 
-      const accumulatedFunds = lastLotteryResult.rows[0]?.accumulated_funds || 0;
+      const lastDrawn = lastLotteryResult.rows[0];
+      const accumulatedFunds = lastDrawn && lastDrawn.winner_telegram_id == null
+        ? (lastDrawn.accumulated_funds || 0)
+        : 0;
 
       logger.info('Starting lottery creation', { 
         name,
