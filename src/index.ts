@@ -567,7 +567,7 @@ async function sendTicketInvoice(ctx: MyContext, lottery: Lottery, ticketNumber:
       }
     );
 
-    checkPaymentStatus(paymentHash, lotteryId, ticketNumber, ctx.from.id, lottery);
+    checkPaymentStatus(paymentHash, lotteryId, ticketNumber, ctx.from.id, ctx.from.username || '', lottery);
   } catch (error) {
     logger.error('Error creating invoice', { error });
     await ctx.reply('❌ Error generando la factura.');
@@ -699,11 +699,30 @@ bot.action('skip_notification', isAdmin, async (ctx) => {
 // VERIFICACIÓN DE PAGOS
 // ============================================
 
+// Mensaje al comprador cuando se confirma el pago (verificación en vivo y cron de recuperación)
+async function sendPaymentConfirmed(userId: number, username: string | null | undefined, ticketNumber: number, lottery: Lottery) {
+  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
+  const contactNote = username
+    ? `En caso de ser el ganador, un administrador te contactará por Telegram en @${escapeMd(username)} para coordinar el envío del premio.`
+    : `En caso de ser el ganador, un administrador te contactará por Telegram para coordinar el envío del premio. ` +
+      `Te recomendamos crear un @usuario en los ajustes de Telegram para que podamos escribirte.`;
+
+  await bot.telegram.sendMessage(
+    userId,
+    `✅ *¡Pago confirmado!*\n\n` +
+    `Tu número: *${formatNumber(ticketNumber)}*\n\n` +
+    `Sorteo: ${drawDate} a las ${lottery.drawTime}\n\n` +
+    contactNote,
+    { parse_mode: 'Markdown' }
+  );
+}
+
 async function checkPaymentStatus(
   paymentHash: string,
   lotteryId: number,
   ticketNumber: number,
   userId: number,
+  username: string,
   lottery: Lottery
 ) {
   const maxChecks = 60;
@@ -721,15 +740,7 @@ async function checkPaymentStatus(
         await purchaseService.markAsPaid(paymentHash);
         await ticketService.markTicketAsSold(lotteryId, ticketNumber);
 
-        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
-        
-        await bot.telegram.sendMessage(
-          userId,
-          `✅ *¡Pago confirmado!*\n\n` +
-          `Tu número: *${formatNumber(ticketNumber)}*\n\n` +
-          `Sorteo: ${drawDate} a las ${lottery.drawTime}`,
-          { parse_mode: 'Markdown' }
-        );
+        await sendPaymentConfirmed(userId, username, ticketNumber, lottery);
 
         logger.info('Payment confirmed', { paymentHash, ticketNumber });
       }
@@ -781,15 +792,7 @@ cron.schedule('*/30 * * * * *', async () => {
         const lottery = await lotteryService.getLotteryById(purchase.lotteryId);
         if (!lottery) continue;
 
-        const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
-
-        await bot.telegram.sendMessage(
-          purchase.telegramUserId,
-          `✅ *¡Pago confirmado!*\n\n` +
-          `Tu número: *${formatNumber(purchase.ticketNumber)}*\n\n` +
-          `Sorteo: ${drawDate} a las ${lottery.drawTime}`,
-          { parse_mode: 'Markdown' }
-        );
+        await sendPaymentConfirmed(purchase.telegramUserId, purchase.telegramUsername, purchase.ticketNumber, lottery);
 
         logger.info('Payment recovered by cron', { paymentHash: purchase.paymentHash, ticketNumber: purchase.ticketNumber });
       } catch (err) {
