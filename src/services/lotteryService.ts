@@ -325,6 +325,21 @@ export class LotteryService {
     }
   }
 
+  // Loterías terminadas (con sorteo o cerradas), la más reciente primero
+  async getPastLotteries(limit = 10): Promise<Lottery[]> {
+    try {
+      const result = await query(
+        `SELECT * FROM lotteries WHERE status IN ('completed', 'closed')
+         ORDER BY draw_date DESC, created_at DESC LIMIT $1`,
+        [limit]
+      );
+      return result.rows.map((row: any) => DBMapper.lotteryFromDB(row as LotteryDB));
+    } catch (error) {
+      logger.error('Error getting past lotteries', { error });
+      throw error;
+    }
+  }
+
   async getLotteryById(lotteryId: number): Promise<Lottery | null> {
     try {
       const result = await query(

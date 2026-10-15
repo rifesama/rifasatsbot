@@ -22,7 +22,7 @@ const tgContact = (id: number | string, username?: string | null): string =>
   username
     ? `@${escapeMd(username)} (ID: ${id})`
     : `[abrir chat](tg://user?id=${id}) (sin @usuario, ID: ${id})`;
-import { Lottery } from './types';
+import { Lottery, Purchase } from './types';
 import { query } from './database/connection';
 import cron from 'node-cron';
 
@@ -174,56 +174,41 @@ bot.action('admin_stats', isAdmin, async (ctx) => {
     return ctx.reply('❌ No hay ninguna lotería activa.');
   }
 
-  const stats = await statsService.getLotteryStats(lottery.id);
-  const purchases = await purchaseService.getPurchasesByLottery(lottery.id);
-  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
-  const adminFeePercentage = lottery.adminFeePercentage || 10;
+  await sendLotteryReport(ctx, lottery);
+});
 
-  let message = `📊 *Estadísticas - ${lottery.name}*\n\n`;
-  
-  if (lottery.description) {
-    message += `📋 ${lottery.description}\n\n`;
-  }
-  
-  message += `📅 Sorteo: ${drawDate} a las ${lottery.drawTime}\n`;
-  message += `💰 Precio: ${formatSats(lottery.ticketPrice)} sats\n`;
-  message += `💼 Comisión admin: ${adminFeePercentage}%\n\n`;
-  
-  if (lottery.accumulatedFunds && lottery.accumulatedFunds > 0) {
-    message += `🎁 *Bote acumulado anterior:* ${formatSats(lottery.accumulatedFunds)} sats\n`;
-  }
-  
-  message += `✅ Vendidos: ${stats.soldTickets}/100 (${stats.percentageSold.toFixed(1)}%)\n`;
-  message += `🟩 Disponibles: ${stats.availableTickets}\n`;
-  message += `💵 Recaudado: ${formatSats(stats.totalRevenue)} sats\n`;
-  
-  if (lottery.accumulatedFunds && lottery.accumulatedFunds > 0) {
-    const totalPrize = stats.totalRevenue + lottery.accumulatedFunds;
-    const netPrize = Math.floor(totalPrize * (100 - adminFeePercentage) / 100);
-    const adminAmount = totalPrize - netPrize;
-    message += `🏆 *Premio total:* ${formatSats(totalPrize)} sats\n`;
-    message += `   └ Para ganador/bote: ${formatSats(netPrize)} sats (${100 - adminFeePercentage}%)\n`;
-    message += `   └ Comisión admin: ${formatSats(adminAmount)} sats (${adminFeePercentage}%)\n`;
-  }
-  
-  message += `\n🎯 *Números vendidos:*\n`;
-  message += stats.soldNumbers.map(n => formatNumber(n)).join(', ') || 'Ninguno';
+bot.action('admin_history', isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
 
-  await ctx.reply(message, { parse_mode: 'Markdown' });
-
-  if (purchases.length > 0) {
-    let detailMessage = '📋 *Compras detalladas:*\n\n';
-    
-    for (const p of purchases) {
-      detailMessage += `Número: ${formatNumber(p.ticketNumber)}\n`;
-      detailMessage += `Usuario: ${tgContact(p.telegramUserId, p.telegramUsername)}\n`;
-      if (p.lightningAddress) detailMessage += `Contacto: ${escapeMd(p.lightningAddress)}\n`;
-      detailMessage += `Fecha: ${new Date(p.purchasedAt).toLocaleString('es-CO')}\n`;
-      detailMessage += `Monto: ${formatSats(p.amountSats)} sats\n\n`;
-    }
-
-    await ctx.reply(detailMessage, { parse_mode: 'Markdown' });
+  const past = await lotteryService.getPastLotteries(10);
+  if (past.length === 0) {
+    return ctx.reply('📜 Todavía no hay loterías terminadas.');
   }
+
+  const buttons = past.map(l => {
+    const date = new Date(l.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: '2-digit' });
+    const result = l.status === 'closed'
+      ? '❌ cerrada'
+      : l.winnerTelegramId ? `🏆 ${formatNumber(l.winningNumber!)}` : `🎁 ${formatNumber(l.winningNumber!)} sin ganador`;
+    const name = l.name.length > 22 ? l.name.slice(0, 21) + '…' : l.name;
+    return [{ text: `${name} · ${date} · ${result}`, callback_data: `admin_history_${l.id}` }];
+  });
+
+  await ctx.reply('📜 *Historial* — últimas loterías terminadas:', {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: buttons },
+  });
+});
+
+bot.action(/^admin_history_(\d+)$/, isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const lottery = await lotteryService.getLotteryById(parseInt(ctx.match[1]));
+  if (!lottery) {
+    return ctx.reply('❌ Lotería no encontrada.');
+  }
+
+  await sendLotteryReport(ctx, lottery);
 });
 
 bot.action('admin_winner_random', isAdmin, async (ctx) => {
@@ -572,6 +557,116 @@ async function sendTicketInvoice(ctx: MyContext, lottery: Lottery, ticketNumber:
     logger.error('Error creating invoice', { error });
     await ctx.reply('❌ Error generando la factura.');
   }
+}
+
+// Informe de una lotería: activa (estadísticas) o terminada (historial)
+async function sendLotteryReport(ctx: MyContext, lottery: Lottery) {
+  const stats = await statsService.getLotteryStats(lottery.id);
+  const purchases = await purchaseService.getPurchasesByLottery(lottery.id);
+  const drawDate = new Date(lottery.drawDate).toLocaleDateString('es-CO', { timeZone: 'UTC' });
+  const adminFeePercentage = lottery.adminFeePercentage || 10;
+
+  const finished = lottery.status === 'completed' || lottery.status === 'closed';
+  const statusLabel: Record<Lottery['status'], string> = {
+    active: '🟢 Activa', frozen: '🚫 Venta congelada', completed: '🏁 Sorteada', closed: '❌ Cerrada sin sorteo',
+  };
+
+  let message = `${finished ? '📜' : '📊'} *${finished ? 'Historial' : 'Estadísticas'} - ${escapeMd(lottery.name)}*\n`;
+  message += `${statusLabel[lottery.status]}\n\n`;
+  
+  if (lottery.description) {
+    message += `📋 ${escapeMd(lottery.description)}\n\n`;
+  }
+  
+  message += `📅 Sorteo: ${drawDate} a las ${lottery.drawTime}\n`;
+  message += `💰 Precio: ${formatSats(lottery.ticketPrice)} sats\n`;
+  message += `💼 Comisión admin: ${adminFeePercentage}%\n\n`;
+  
+  if (!finished) {
+    if (lottery.accumulatedFunds && lottery.accumulatedFunds > 0) {
+      message += `🎁 *Bote acumulado anterior:* ${formatSats(lottery.accumulatedFunds)} sats\n`;
+    }
+    
+    message += `✅ Vendidos: ${stats.soldTickets}/100 (${stats.percentageSold.toFixed(1)}%)\n`;
+    message += `🟩 Disponibles: ${stats.availableTickets}\n`;
+    message += `💵 Recaudado: ${formatSats(stats.totalRevenue)} sats\n`;
+    
+    if (lottery.accumulatedFunds && lottery.accumulatedFunds > 0) {
+      const totalPrize = stats.totalRevenue + lottery.accumulatedFunds;
+      const netPrize = Math.floor(totalPrize * (100 - adminFeePercentage) / 100);
+      const adminAmount = totalPrize - netPrize;
+      message += `🏆 *Premio total:* ${formatSats(totalPrize)} sats\n`;
+      message += `   └ Para ganador/bote: ${formatSats(netPrize)} sats (${100 - adminFeePercentage}%)\n`;
+      message += `   └ Comisión admin: ${formatSats(adminAmount)} sats (${adminFeePercentage}%)\n`;
+    }
+  } else {
+    message += `✅ Vendidos: ${stats.soldTickets}/100 (${stats.percentageSold.toFixed(1)}%)\n`;
+    message += `💵 Recaudado: ${formatSats(stats.totalRevenue)} sats\n\n`;
+    message += buildResultSection(lottery, stats.totalRevenue, purchases);
+  }
+  
+  message += `\n🎯 *Números vendidos:*\n`;
+  message += stats.soldNumbers.map(n => formatNumber(n)).join(', ') || 'Ninguno';
+
+  await ctx.reply(message, { parse_mode: 'Markdown' });
+
+  if (purchases.length > 0) {
+    // Telegram limita los mensajes a 4096 caracteres: se envía por partes
+    let detailMessage = '📋 *Compras detalladas:*\n\n';
+    
+    for (const p of purchases) {
+      let entry = `Número: ${formatNumber(p.ticketNumber)}\n`;
+      entry += `Usuario: ${tgContact(p.telegramUserId, p.telegramUsername)}\n`;
+      if (p.lightningAddress) entry += `Contacto: ${escapeMd(p.lightningAddress)}\n`;
+      entry += `Fecha: ${new Date(p.purchasedAt).toLocaleString('es-CO')}\n`;
+      entry += `Monto: ${formatSats(p.amountSats)} sats\n\n`;
+      if (detailMessage.length + entry.length > 3800) {
+        await ctx.reply(detailMessage, { parse_mode: 'Markdown' });
+        detailMessage = '';
+      }
+      detailMessage += entry;
+    }
+
+    if (detailMessage) await ctx.reply(detailMessage, { parse_mode: 'Markdown' });
+  }
+}
+
+// Resultado de una lotería terminada. Al sortear sin ganador, processWinner
+// guarda en accumulated_funds lo que pasa a la siguiente rifa; con ganador,
+// accumulated_funds sigue siendo el bote que traía de la rifa anterior.
+function buildResultSection(lottery: Lottery, revenue: number, purchases: Purchase[]): string {
+  if (lottery.status === 'closed') {
+    return `ℹ️ Se cerró sin sortear ganador.\n`;
+  }
+
+  const adminFee = lottery.adminFee || 0;
+  const pct = lottery.adminFeePercentage || 10;
+  const method = lottery.selectionMethod === 'manual' ? 'manual' : 'aleatoria';
+  let r = `🎯 *Número ganador:* ${formatNumber(lottery.winningNumber!)} (selección ${method})\n`;
+
+  if (lottery.winnerTelegramId) {
+    const previous = lottery.accumulatedFunds || 0;
+    const total = revenue + previous;
+    const winnerPurchase = purchases.find(p => p.ticketNumber === lottery.winningNumber);
+    const contact = tgContact(lottery.winnerTelegramId, winnerPurchase?.telegramUsername);
+    r += `👤 Ganador: ${contact}\n\n`;
+    r += `💰 *Distribución:*\n`;
+    if (previous > 0) r += `   Bote anterior: ${formatSats(previous)} sats\n`;
+    r += `   Total: ${formatSats(total)} sats\n`;
+    r += `   🏆 Para el ganador: ${formatSats(total - adminFee)} sats (${100 - pct}%)\n`;
+    r += `   💼 Comisión admin: ${formatSats(adminFee)} sats (${pct}%)\n`;
+  } else {
+    const carried = lottery.accumulatedFunds || 0;
+    const total = carried + adminFee;
+    const previous = Math.max(0, total - revenue);
+    r += `❌ Ese número no se vendió: no hubo ganador.\n\n`;
+    r += `💰 *Distribución:*\n`;
+    if (previous > 0) r += `   Bote anterior: ${formatSats(previous)} sats\n`;
+    r += `   Total: ${formatSats(total)} sats\n`;
+    r += `   🎁 Pasó a la siguiente rifa: ${formatSats(carried)} sats (${100 - pct}%)\n`;
+    r += `   💼 Comisión admin: ${formatSats(adminFee)} sats (${pct}%)\n`;
+  }
+  return r;
 }
 
 // ============================================

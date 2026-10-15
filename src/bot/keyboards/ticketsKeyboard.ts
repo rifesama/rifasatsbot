@@ -48,6 +48,7 @@ export const adminMainKeyboard: InlineKeyboardMarkup = {
   inline_keyboard: [
     [{ text: '➕ Crear Lotería', callback_data: 'admin_create' }],
     [{ text: '📊 Ver Estadísticas', callback_data: 'admin_stats' }],
+    [{ text: '📜 Historial', callback_data: 'admin_history' }],
     [{ text: '🚫 Congelar Venta', callback_data: 'admin_freeze' }],
     [
       { text: '🎲 Selección Aleatoria', callback_data: 'admin_winner_random' },

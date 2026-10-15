@@ -32,6 +32,7 @@ Bot de rifas/loterías P2P con pagos en Bitcoin vía Lightning Network, operado 
 **Desde el panel de admin:**
 - **Crear rifa** — nombre, descripción, precio, fecha, hora y comisión
 - **Ver estadísticas** — números vendidos, recaudado, distribución de fondos
+- **Historial** — últimas 10 rifas terminadas; al elegir una muestra el número ganador, el ganador (contacto de Telegram), la distribución de fondos y las compras
 - **Congelar venta** — impide nuevas compras sin cerrar la rifa (útil 1h antes del sorteo)
 - **Seleccionar ganador aleatorio** — el bot elige entre los números vendidos
 - **Seleccionar ganador manual** — el admin ingresa el número ganador (ej. últimas cifras de lotería externa)
