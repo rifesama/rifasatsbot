@@ -51,10 +51,11 @@ Bot de rifas/loterías P2P con pagos en Bitcoin vía Lightning Network, operado 
 
 1. Usuario ejecuta `/lottery`
 2. Selecciona un número disponible (🟩)
-3. Ingresa una forma de contacto: Lightning Address, correo electrónico o usuario de Telegram
-4. Recibe factura Lightning + QR
-5. Paga desde su wallet Lightning
-6. Bot confirma el pago y reserva el número
+3. Recibe factura Lightning + QR
+4. Paga desde su wallet Lightning
+5. Bot confirma el pago y reserva el número
+
+No se pide ningún dato de contacto: el bot guarda el ID y el @usuario de Telegram del comprador. Si gana, el bot le avisa y el administrador lo contacta por Telegram para enviarle el premio.
 
 ## Distribución de fondos
 

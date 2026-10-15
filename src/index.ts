@@ -16,6 +16,12 @@ import { formatNumber, formatSats } from './utils/validators';
 
 const escapeMd = (text: string): string =>
   String(text || '').replace(/[_*`[]/g, '\\$&');
+// Contacto del comprador por Telegram: @usuario si lo tiene; si no, enlace
+// directo por ID (funciona porque el usuario ya habló con el bot).
+const tgContact = (id: number | string, username?: string | null): string =>
+  username
+    ? `@${escapeMd(username)} (ID: ${id})`
+    : `[abrir chat](tg://user?id=${id}) (sin @usuario, ID: ${id})`;
 import { Lottery } from './types';
 import { query } from './database/connection';
 import cron from 'node-cron';
@@ -26,7 +32,6 @@ import cron from 'node-cron';
 interface SessionData {
   selectedTicket?: number;
   lotteryId?: number;
-  awaitingLightningAddress?: boolean;
   awaitingWinningNumber?: boolean;
   awaitingLotteryData?: {
     step: 'name' | 'description' | 'price' | 'date' | 'time' | 'percentage';  // ← AGREGADO 'percentage'
@@ -211,8 +216,8 @@ bot.action('admin_stats', isAdmin, async (ctx) => {
     
     for (const p of purchases) {
       detailMessage += `Número: ${formatNumber(p.ticketNumber)}\n`;
-      detailMessage += `Usuario: @${escapeMd(p.telegramUsername)} (ID: ${p.telegramUserId})\n`;
-      detailMessage += `Dirección LN: ${escapeMd(p.lightningAddress)}\n`;
+      detailMessage += `Usuario: ${tgContact(p.telegramUserId, p.telegramUsername)}\n`;
+      if (p.lightningAddress) detailMessage += `Contacto: ${escapeMd(p.lightningAddress)}\n`;
       detailMessage += `Fecha: ${new Date(p.purchasedAt).toLocaleString('es-CO')}\n`;
       detailMessage += `Monto: ${formatSats(p.amountSats)} sats\n\n`;
     }
@@ -378,21 +383,8 @@ bot.action(/^select_(\d+)$/, async (ctx) => {
     return ctx.reply('❌ Este número ya no está disponible.');
   }
 
-  ctx.session = {
-    selectedTicket: ticketNumber,
-    lotteryId: lottery.id,
-    awaitingLightningAddress: true,
-  };
-
-  await ctx.reply(
-    `*Has seleccionado el número ${formatNumber(ticketNumber)}*\n\n` +
-    `En caso de que seas el ganador necesitamos contactarte, ingresa UNA de las siguientes opciones:\n` +
-    `⚡️ Lightning Address\n` +
-    `📨 Correo electrónico\n` +
-    `👤 Usuario Telegram\n\n` +
-    `Ejemplo: satoshi@colsats.com`,
-    { parse_mode: 'Markdown' }
-  );
+  ctx.session = {};
+  await sendTicketInvoice(ctx, lottery, ticketNumber);
 });
 
 bot.action(/^sold_(\d+)$/, async (ctx) => {
@@ -526,78 +518,61 @@ bot.on('text', async (ctx) => {
     }
     return;
   }
-
-  // Flujo de contacto del ganador
-  if (ctx.session?.awaitingLightningAddress) {
-    const lightningAddress = text.trim();
-
-    if (lightningAddress.length === 0) {
-      return ctx.reply('❌ El campo no puede estar vacío.');
-    }
-
-    if (lightningAddress.length > 50) {
-      return ctx.reply(`❌ El texto es demasiado largo (${lightningAddress.length} caracteres). Máximo 50 caracteres.`);
-    }
-
-    const ticketNumber = ctx.session.selectedTicket!;
-    const lotteryId = ctx.session.lotteryId!;
-    const lottery = await lotteryService.getActiveLottery();
-
-    if (!lottery) {
-      return ctx.reply('❌ La lotería ya no está activa.');
-    }
-
-    try {
-      const { paymentHash, paymentRequest } = await lightningService.createInvoice(
-        lottery.ticketPrice,
-        `Lotería ${lottery.name} - Número ${formatNumber(ticketNumber)}`
-      );
-
-      const tickets = await ticketService.getTicketsByLottery(lotteryId);
-      const ticket = tickets.find(t => t.number === ticketNumber);
-
-      if (!ticket) {
-        return ctx.reply('❌ Error al procesar el ticket.');
-      }
-
-      await purchaseService.createPurchase(
-        lotteryId,
-        ticket.id,
-        ticketNumber,
-        ctx.from.id,
-        ctx.from.username || '',
-        lightningAddress,
-        paymentHash,
-        paymentRequest,
-        lottery.ticketPrice
-      );
-
-      const qrBuffer = await generateQRCode(paymentRequest);
-
-      await ctx.replyWithPhoto(
-        { source: qrBuffer },
-        {
-          caption: 
-            `⚡ *Factura Lightning*\n\n` +
-            `Número: *${formatNumber(ticketNumber)}*\n` +
-            `Monto: ${formatSats(lottery.ticketPrice)} sats\n\n` +
-            `Escanea el QR o copia:\n\n` +
-            `\`${paymentRequest}\`\n\n` +
-            `⏱️ Expira en ${config.invoice.expiryMinutes} min.`,
-          parse_mode: 'Markdown',
-        }
-      );
-
-      ctx.session = {};
-
-      checkPaymentStatus(paymentHash, lotteryId, ticketNumber, ctx.from.id, lottery);
-    } catch (error) {
-      logger.error('Error creating invoice', { error });
-      await ctx.reply('❌ Error generando la factura.');
-      ctx.session = {};
-    }
-  }
 });
+
+// Genera la factura del número elegido. Antes se pedía un contacto (LN
+// address / correo / usuario); ya no hace falta: si gana, el admin lo
+// contacta por Telegram con su ID y @usuario, que se guardan en la compra.
+async function sendTicketInvoice(ctx: MyContext, lottery: Lottery, ticketNumber: number) {
+  if (!ctx.from?.id) return;
+  const lotteryId = lottery.id;
+  try {
+    const { paymentHash, paymentRequest } = await lightningService.createInvoice(
+      lottery.ticketPrice,
+      `Lotería ${lottery.name} - Número ${formatNumber(ticketNumber)}`
+    );
+
+    const tickets = await ticketService.getTicketsByLottery(lotteryId);
+    const ticket = tickets.find(t => t.number === ticketNumber);
+
+    if (!ticket) {
+      return ctx.reply('❌ Error al procesar el ticket.');
+    }
+
+    await purchaseService.createPurchase(
+      lotteryId,
+      ticket.id,
+      ticketNumber,
+      ctx.from.id,
+      ctx.from.username || '',
+      '',  // lightning_address (NOT NULL en la BD): ya no se pide contacto
+      paymentHash,
+      paymentRequest,
+      lottery.ticketPrice
+    );
+
+    const qrBuffer = await generateQRCode(paymentRequest);
+
+    await ctx.replyWithPhoto(
+      { source: qrBuffer },
+      {
+        caption: 
+          `⚡ *Factura Lightning*\n\n` +
+          `Número: *${formatNumber(ticketNumber)}*\n` +
+          `Monto: ${formatSats(lottery.ticketPrice)} sats\n\n` +
+          `Escanea el QR o copia:\n\n` +
+          `\`${paymentRequest}\`\n\n` +
+          `⏱️ Expira en ${config.invoice.expiryMinutes} min.`,
+        parse_mode: 'Markdown',
+      }
+    );
+
+    checkPaymentStatus(paymentHash, lotteryId, ticketNumber, ctx.from.id, lottery);
+  } catch (error) {
+    logger.error('Error creating invoice', { error });
+    await ctx.reply('❌ Error generando la factura.');
+  }
+}
 
 // ============================================
 // FUNCIONES AUXILIARES - ACTUALIZADO
@@ -609,13 +584,14 @@ async function processWinnerResult(ctx: MyContext, lottery: Lottery, result: any
     // HAY GANADOR
     let message = `🏆 *¡GANADOR SELECCIONADO!*\n\n`;
     message += `🎯 Número ganador: *${formatNumber(result.winningNumber)}*\n\n`;
-    message += `👤 Ganador: @${escapeMd(result.winner.telegramUsername)}\n`;
-    message += `⚡ Dirección LN: ${escapeMd(result.winner.lightningAddress)}\n\n`;
+    message += `👤 Ganador: ${tgContact(result.winner.telegramUserId, result.winner.telegramUsername)}\n`;
+    if (result.winner.lightningAddress) message += `📨 Contacto: ${escapeMd(result.winner.lightningAddress)}\n`;
+    message += `\n`;
     message += `💰 *Distribución:*\n`;
     message += `   Total recaudado: ${formatSats(result.totalAmount)} sats\n`;
     message += `   🏆 Para ganador: ${formatSats(result.winnerPrize!)} sats (${100 - result.adminFeePercentage}%)\n`;
     message += `   💼 Comisión admin: ${formatSats(result.adminFee)} sats (${result.adminFeePercentage}%)\n\n`;
-    message += `Envía ${formatSats(result.winnerPrize!)} sats a la dirección del ganador.`;
+    message += `Escríbele por Telegram para coordinar el envío de ${formatSats(result.winnerPrize!)} sats.`;
 
     await ctx.reply(message, { parse_mode: 'Markdown' });
 
@@ -627,7 +603,8 @@ async function processWinnerResult(ctx: MyContext, lottery: Lottery, result: any
         `Lotería: "${lottery.name}"\n\n` +
         `🎯 Número ganador: *${formatNumber(result.winningNumber)}*\n` +
         `💰 Tu premio: ${formatSats(result.winnerPrize!)} sats\n\n` +
-        `Será enviado a:\n${result.winner.lightningAddress}`,
+        `El administrador te escribirá por Telegram para coordinar el envío del premio. ` +
+        `Ten lista tu Lightning Address o una factura.`,
         { parse_mode: 'Markdown' }
       );
     } catch (error) {
