@@ -56,7 +56,7 @@ export const adminMainKeyboard: InlineKeyboardMarkup = {
     [
       { text: '✍️ Selección Manual', callback_data: 'admin_winner_manual' },
     ],
-    [{ text: '❌ Cerrar Lotería', callback_data: 'admin_close' }],
+    [{ text: '❌ Cancelar Lotería (sin sorteo)', callback_data: 'admin_close' }],
     [{ text: '🗑️ Eliminar Lotería', callback_data: 'admin_delete' }],
   ],
 };

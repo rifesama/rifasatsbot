@@ -36,7 +36,7 @@ Bot de rifas/loterías P2P con pagos en Bitcoin vía Lightning Network, operado 
 - **Congelar venta** — impide nuevas compras sin cerrar la rifa (útil 1h antes del sorteo)
 - **Seleccionar ganador aleatorio** — el bot elige entre los números vendidos
 - **Seleccionar ganador manual** — el admin ingresa el número ganador (ej. últimas cifras de lotería externa)
-- **Cerrar rifa** — cierra la rifa sin seleccionar ganador
+- **Cancelar lotería (sin sorteo)** — termina la rifa sin seleccionar ganador (pide confirmación; para sortear usa "Congelar venta" y después la selección de ganador)
 - **Eliminar rifa** — elimina permanentemente una rifa que no tenga pagos confirmados
 
 ## Estados de una rifa

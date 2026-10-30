@@ -290,7 +290,7 @@ bot.action('admin_delete', isAdmin, async (ctx) => {
     return ctx.reply(
       `⚠️ No se puede eliminar "${lottery.name}".\n\n` +
       `Ya hay *${stats.soldTickets}* número(s) vendido(s) con pagos confirmados.\n` +
-      `Usa "Cerrar Lotería" en su lugar.`,
+      `Usa "Cancelar Lotería (sin sorteo)" en su lugar.`,
       { parse_mode: 'Markdown' }
     );
   }
@@ -332,6 +332,8 @@ bot.action('cancel_delete', isAdmin, async (ctx) => {
   await ctx.editMessageText('✅ Eliminación cancelada.');
 });
 
+// Cancelar = cerrar SIN sortear. Se confundía con "Congelar Venta" (el paso
+// previo al sorteo), así que pide confirmación y lo dice claramente.
 bot.action('admin_close', isAdmin, async (ctx) => {
   await ctx.answerCbQuery();
 
@@ -340,8 +342,43 @@ bot.action('admin_close', isAdmin, async (ctx) => {
     return ctx.reply('❌ No hay ninguna lotería activa.');
   }
 
-  await lotteryService.closeLottery(lottery.id);
-  await ctx.reply(`✅ Lotería "${lottery.name}" cerrada.`);
+  const stats = await statsService.getLotteryStats(lottery.id);
+  await ctx.reply(
+    `⚠️ *¿Cancelar la lotería sin sortear ganador?*\n\n` +
+    `🎟️ *${lottery.name}*\n` +
+    `🎫 Números vendidos: *${stats.soldTickets}*\n\n` +
+    `La lotería terminará *sin ganador* y no se puede deshacer desde el bot. ` +
+    `Los compradores no reciben reembolso automático.\n\n` +
+    `👉 Si quieres *detener la venta para sortear*, usa "🚫 Congelar Venta" ` +
+    `y después "🎲 Selección Aleatoria" o "✍️ Selección Manual".`,
+    {
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '❌ Sí, cancelar sin sorteo', callback_data: `confirm_close_${lottery.id}` }],
+          [{ text: '↩️ No, volver', callback_data: 'cancel_close' }],
+        ],
+      },
+    }
+  );
+});
+
+bot.action(/^confirm_close_(\d+)$/, isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const lotteryId = parseInt(ctx.match[1]);
+  const lottery = await lotteryService.getActiveLottery();
+  if (!lottery || lottery.id !== lotteryId) {
+    return ctx.editMessageText('❌ Esa lotería ya no está activa.');
+  }
+
+  await lotteryService.closeLottery(lotteryId);
+  await ctx.editMessageText(`✅ Lotería "${lottery.name}" cancelada sin sorteo.`);
+});
+
+bot.action('cancel_close', isAdmin, async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.editMessageText('✅ No se canceló la lotería.');
 });
 
 // ============================================
