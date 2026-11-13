@@ -910,6 +910,7 @@ cron.schedule('* * * * *', async () => {
 // Verificar pagos pendientes cada 30 segundos (recuperación tras reinicios)
 cron.schedule('*/30 * * * * *', async () => {
   try {
+    await purchaseService.expireStalePurchases(config.invoice.expiryMinutes);
     const pending = await purchaseService.getPendingPurchases();
     if (pending.length === 0) return;
 

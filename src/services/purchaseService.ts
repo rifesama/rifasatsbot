@@ -62,6 +62,24 @@ export class PurchaseService {
     return result.rows.map((row: any) => DBMapper.purchaseFromDB(row as PurchaseDB));
   }
 
+  /**
+   * Marca como 'expired' las compras pendientes cuya factura ya venció
+   * (con un margen de gracia). Sin esto, el cron revisaba para siempre
+   * facturas viejas y llenaba los logs de errores 404.
+   */
+  async expireStalePurchases(invoiceExpiryMinutes: number, graceMinutes = 60): Promise<number> {
+    const result = await query(
+      `UPDATE purchases SET status = 'expired'
+       WHERE status = 'pending'
+         AND COALESCE(expires_at, purchased_at + make_interval(mins => $1::int))
+             < NOW() - make_interval(mins => $2::int)`,
+      [invoiceExpiryMinutes, graceMinutes]
+    );
+    const n = result.rowCount ?? 0;
+    if (n > 0) logger.info('Expired stale pending purchases', { count: n });
+    return n;
+  }
+
   async getPendingPurchases(): Promise<Purchase[]> {
     const result = await query(
       "SELECT * FROM purchases WHERE status = 'pending'"
